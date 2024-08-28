@@ -1,38 +1,81 @@
 <template>
-  <h2>Map</h2>
-  <div ref="mapContainer" class="map-container" style=" height: 800px"></div>
-
+  <h2>
+    <img src="/pin.png" class="logo" alt="Imagen Pin" />
+    {{ dataMapPage.title }}
+  
+  </h2>
+  <div ref="mapContainer" class="map-container" style="height: 800px"></div>
   <Dialog
-    :visible="dialogVisible"
-    :message="dialogMessage"
-    :lat="dialogLat"
-    :lng="dialogLng"
-    @update:visible="dialogVisible = $event"
+    :visible="dataMapPage.dialogVisible"
+    :message="dataMapPage.dialogMessage"
+    :lat="dataMapPage.dialogLat"
+    :lng="dataMapPage.dialogLng"
+    @update:visible="dataMapPage.dialogVisible = $event"
     @marker-action="handleMarkerAction"
   />
 </template>
 
 <script lang="ts" setup>
-import { ref, onMounted, watchEffect } from 'vue';
+import { ref, onMounted, reactive, watchEffect } from 'vue';
 import leaflet from 'leaflet';
 import { useGeolocation } from '@vueuse/core';
 import { userMarker, nearbyMarkers } from '@/stores/mapStore';
 import Dialog from '@/components/Dialog.vue';
+import { convertToGeoJson } from '@/utils/geoJsonUtils';
+import MapApi from './MapApi';
+import type { ListVisit } from './interface/Map';
 
 const { coords } = useGeolocation();
-const lat = ref(0);
-const lng = ref(0);
+const dataMapPage = reactive({
+  title: 'Visits on the map',
+  dialogVisible: false,
+  dialogMessage: '',
+  dialogLat: 0,
+  dialogLng: 0,
+  pointerEnabled: true,
+  datos: [] as ListVisit[],
+  loadingC: false
+});
 const mapContainer = ref<HTMLDivElement | null>(null);
-const dialogVisible = ref(false);
-const dialogMessage = ref('');
-const dialogLat = ref(0);
-const dialogLng = ref(0);
-const pointerEnabled = ref(true); 
 let map: leaflet.Map;
 let userGeoMarker: leaflet.Marker;
 let markerAction = ref<'none' | 'add'>('none');
 
+const ListVisits = async () => {
+  try {
+    dataMapPage.loadingC = true;
+    const rawData: ListVisit[] = await MapApi.getVisits();
+    const geoJsonData = convertToGeoJson(rawData);
+
+    map.eachLayer((layer) => {
+      if (layer instanceof leaflet.Marker || layer instanceof leaflet.GeoJSON) {
+        map.removeLayer(layer);
+      }
+    });
+
+    leaflet.geoJSON(geoJsonData, {
+      onEachFeature: (feature, layer) => {
+        if (feature.properties && feature.properties.name) {
+          layer.bindPopup(`<b>${feature.properties.name}</b><br>Email: ${feature.properties.email}<br>Latitude: ${feature.geometry.coordinates[1]}<br>Longitude: ${feature.geometry.coordinates[0]}`);
+        }
+        layer.on('click', () => {
+          dataMapPage.dialogMessage = `Saved Marker at (<strong>${feature.geometry.coordinates[1]},${feature.geometry.coordinates[0]}</strong>)`;
+          dataMapPage.dialogLat = feature.geometry.coordinates[1];
+          dataMapPage.dialogLng = feature.geometry.coordinates[0];
+          dataMapPage.dialogVisible = true;
+          dataMapPage.pointerEnabled = false;
+        });
+      }
+    }).addTo(map);
+  } catch (e) {
+    console.error('Error loading visits:', e);
+  } finally {
+    dataMapPage.loadingC = false;
+  }
+};
+
 onMounted(() => {
+  ListVisits()
   if (mapContainer.value) {
     map = leaflet.map(mapContainer.value).setView([51.505, -0.09], 13);
 
@@ -41,29 +84,23 @@ onMounted(() => {
       attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
 
-    nearbyMarkers.value.forEach(({ latitude, longitude }) => {
-      const marker = leaflet.marker([latitude, longitude])
+    if (userMarker.value.latitude && userMarker.value.longitude) {
+      userGeoMarker = leaflet.marker([userMarker.value.latitude, userMarker.value.longitude])
         .addTo(map)
-        .on('click', () => {
-          dialogMessage.value = `Saved Marker at (<strong>${latitude.toFixed(2)},${longitude.toFixed(2)}</strong>)`;
-          dialogLat.value = latitude;
-          dialogLng.value = longitude;
-          dialogVisible.value = true; 
-          pointerEnabled.value = false; 
-        });
+        .bindPopup('User Marker');
 
-      marker.bindPopup(`<b>Marker</b><br>Latitude: ${latitude.toFixed(6)}<br>Longitude: ${longitude.toFixed(6)}`);
-    });
+      map.setView([userMarker.value.latitude, userMarker.value.longitude], 13);
+    }
 
-    map.addEventListener('click', (e) => {
-      if (pointerEnabled.value) {
+    map.on('click', (e) => {
+      if (dataMapPage.pointerEnabled) {
         const { lat: latitude, lng: longitude } = e.latlng;
 
-        dialogMessage.value = `Saved Marker at (<strong>${latitude.toFixed(2)},${longitude.toFixed(2)}</strong>)`;
-        dialogLat.value = latitude;
-        dialogLng.value = longitude;
-        dialogVisible.value = true;
-        pointerEnabled.value = false; 
+        dataMapPage.dialogMessage = `Saved Marker at (<strong>${latitude.toFixed(2)},${longitude.toFixed(2)}</strong>)`;
+        dataMapPage.dialogLat = latitude;
+        dataMapPage.dialogLng = longitude;
+        dataMapPage.dialogVisible = true;
+        dataMapPage.pointerEnabled = false;
       }
     });
   }
@@ -97,13 +134,13 @@ function handleMarkerAction(action: 'add' | 'none') {
   markerAction.value = action;
 
   if (markerAction.value === 'add') {
-    leaflet.marker([dialogLat.value, dialogLng.value])
+    leaflet.marker([dataMapPage.dialogLat, dataMapPage.dialogLng])
       .addTo(map)
-      .bindPopup(`Saved Marker at (<strong>${dialogLat.value.toFixed(2)},${dialogLng.value.toFixed(2)}</strong>)`);
+      .bindPopup(`Saved Marker at (<strong>${dataMapPage.dialogLat.toFixed(2)},${dataMapPage.dialogLng.toFixed(2)}</strong>)`);
 
-    nearbyMarkers.value.push({ latitude: dialogLat.value, longitude: dialogLng.value });
+    nearbyMarkers.value.push({ latitude: dataMapPage.dialogLat, longitude: dataMapPage.dialogLng });
   }
-  pointerEnabled.value = true;
+  dataMapPage.pointerEnabled = true;
 }
 </script>
 
@@ -111,6 +148,6 @@ function handleMarkerAction(action: 'add' | 'none') {
 .map-container {
   position: relative;
   margin: 20px;
-  z-index: 1; 
+  z-index: 1;
 }
 </style>

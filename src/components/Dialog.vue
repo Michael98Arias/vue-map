@@ -6,7 +6,7 @@
       <p>Longitude: {{ lng.toFixed(6) }}</p>
       <p>{{ message }}</p>
       <button @click="handleClose">Close</button>
-      <button @click="handleOk">OK</button>
+      <!-- <button @click="handleOk">OK</button> -->
     </div>
   </div>
 </template>
