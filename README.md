@@ -7,3 +7,4 @@ Learn more about the recommended Project Setup and IDE Support in the [Vue Docs 
 
 ### List of implemented icons
 - [Map](https://www.flaticon.es/icono-gratis/clavo_7547196?term=map&page=1&position=34&origin=search&related_id=7547196)
+- [Reload](https://www.flaticon.com/free-icon/reload_4103033?term=reload&page=1&position=17&origin=search&related_id=4103033)
