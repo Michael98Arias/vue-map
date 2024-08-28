@@ -1,15 +1,22 @@
 <template>
   <h2>
     <img src="/pin.png" class="logo" alt="Imagen Pin" />
+    {{ dataMapPage.loadingC }}
     {{ dataMapPage.title }}
-  
   </h2>
+  <br>
+  <h4>
+    <img src="/reload.png" class="logo" alt="Imagen Pin" />
+    {{ dataMapPage.subtitle }}
+    
+  </h4>
+  <button @click="handleClose" class="btn-reload">Reload</button>
+  <br>
   <div ref="mapContainer" class="map-container" style="height: 800px"></div>
+  <LoadingSpinner v-if="dataMapPage.loadingC" />
   <Dialog
     :visible="dataMapPage.dialogVisible"
-    :message="dataMapPage.dialogMessage"
-    :lat="dataMapPage.dialogLat"
-    :lng="dataMapPage.dialogLng"
+    :dialogData="dataMapPage.dialogData"
     @update:visible="dataMapPage.dialogVisible = $event"
     @marker-action="handleMarkerAction"
   />
@@ -21,6 +28,7 @@ import leaflet from 'leaflet';
 import { useGeolocation } from '@vueuse/core';
 import { userMarker, nearbyMarkers } from '@/stores/mapStore';
 import Dialog from '@/components/Dialog.vue';
+import LoadingSpinner from '@/components/LoadingSpinner.vue';
 import { convertToGeoJson } from '@/utils/geoJsonUtils';
 import MapApi from './MapApi';
 import type { ListVisit } from './interface/Map';
@@ -28,12 +36,13 @@ import type { ListVisit } from './interface/Map';
 const { coords } = useGeolocation();
 const dataMapPage = reactive({
   title: 'Visits on the map',
+  subtitle: 'Reload visit data',
   dialogVisible: false,
   dialogMessage: '',
   dialogLat: 0,
   dialogLng: 0,
   pointerEnabled: true,
-  datos: [] as ListVisit[],
+  dialogData: {} as ListVisit,
   loadingC: false
 });
 const mapContainer = ref<HTMLDivElement | null>(null);
@@ -41,38 +50,7 @@ let map: leaflet.Map;
 let userGeoMarker: leaflet.Marker;
 let markerAction = ref<'none' | 'add'>('none');
 
-const ListVisits = async () => {
-  try {
-    dataMapPage.loadingC = true;
-    const rawData: ListVisit[] = await MapApi.getVisits();
-    const geoJsonData = convertToGeoJson(rawData);
 
-    map.eachLayer((layer) => {
-      if (layer instanceof leaflet.Marker || layer instanceof leaflet.GeoJSON) {
-        map.removeLayer(layer);
-      }
-    });
-
-    leaflet.geoJSON(geoJsonData, {
-      onEachFeature: (feature, layer) => {
-        if (feature.properties && feature.properties.name) {
-          layer.bindPopup(`<b>${feature.properties.name}</b><br>Email: ${feature.properties.email}<br>Latitude: ${feature.geometry.coordinates[1]}<br>Longitude: ${feature.geometry.coordinates[0]}`);
-        }
-        layer.on('click', () => {
-          dataMapPage.dialogMessage = `Saved Marker at (<strong>${feature.geometry.coordinates[1]},${feature.geometry.coordinates[0]}</strong>)`;
-          dataMapPage.dialogLat = feature.geometry.coordinates[1];
-          dataMapPage.dialogLng = feature.geometry.coordinates[0];
-          dataMapPage.dialogVisible = true;
-          dataMapPage.pointerEnabled = false;
-        });
-      }
-    }).addTo(map);
-  } catch (e) {
-    console.error('Error loading visits:', e);
-  } finally {
-    dataMapPage.loadingC = false;
-  }
-};
 
 onMounted(() => {
   ListVisits()
@@ -93,15 +71,15 @@ onMounted(() => {
     }
 
     map.on('click', (e) => {
-      if (dataMapPage.pointerEnabled) {
-        const { lat: latitude, lng: longitude } = e.latlng;
+      // if (dataMapPage.pointerEnabled) {
+      //   const { lat: latitude, lng: longitude } = e.latlng;
 
-        dataMapPage.dialogMessage = `Saved Marker at (<strong>${latitude.toFixed(2)},${longitude.toFixed(2)}</strong>)`;
-        dataMapPage.dialogLat = latitude;
-        dataMapPage.dialogLng = longitude;
-        dataMapPage.dialogVisible = true;
-        dataMapPage.pointerEnabled = false;
-      }
+      //   dataMapPage.dialogMessage = `Saved Marker at (<strong>${latitude.toFixed(2)},${longitude.toFixed(2)}</strong>)`;
+      //   dataMapPage.dialogLat = latitude;
+      //   dataMapPage.dialogLng = longitude;
+      //   dataMapPage.dialogVisible = true;
+      //   dataMapPage.pointerEnabled = false;
+      // }
     });
   }
 });
@@ -136,12 +114,52 @@ function handleMarkerAction(action: 'add' | 'none') {
   if (markerAction.value === 'add') {
     leaflet.marker([dataMapPage.dialogLat, dataMapPage.dialogLng])
       .addTo(map)
-      .bindPopup(`Saved Marker at (<strong>${dataMapPage.dialogLat.toFixed(2)},${dataMapPage.dialogLng.toFixed(2)}</strong>)`);
-
+      .bindPopup(`
+        <b>Saved Marker</b><br>
+        Name: ${dataMapPage.dialogData.name}<br>
+        Latitude: ${dataMapPage.dialogData.latitude.toFixed(2)}<br>
+        Longitude: ${dataMapPage.dialogData.longitude.toFixed(2)}
+      `);
     nearbyMarkers.value.push({ latitude: dataMapPage.dialogLat, longitude: dataMapPage.dialogLng });
   }
   dataMapPage.pointerEnabled = true;
 }
+const ListVisits = async () => {
+  console.log('dartos',dataMapPage.loadingC)
+  try {
+    dataMapPage.loadingC = true;
+    const rawData: ListVisit[] = await MapApi.getVisits();
+    const geoJsonData = convertToGeoJson(rawData);
+
+    map.eachLayer((layer) => {
+      if (layer instanceof leaflet.Marker || layer instanceof leaflet.GeoJSON) {
+        map.removeLayer(layer);
+      }
+    });
+
+    leaflet.geoJSON(geoJsonData, {
+      onEachFeature: (feature, layer) => {
+        if (feature.properties && feature.properties.name) {
+          layer.bindPopup(`<b>${feature.properties.name}</b><br>Email: ${feature.properties.email}<br>Latitude: ${feature.geometry.coordinates[1]}<br>Longitude: ${feature.geometry.coordinates[0]}`);
+        }
+        layer.on('click', () => {
+          dataMapPage.dialogData = {
+            latitude: feature.geometry.coordinates[1],
+            longitude: feature.geometry.coordinates[0],
+            name: feature.properties?.name || 'Unknown',
+            email: feature.properties?.email || 'No email'
+          };
+          dataMapPage.dialogVisible = true;
+          dataMapPage.pointerEnabled = false;
+        });
+      }
+    }).addTo(map);
+  } catch (e) {
+    console.error('Error loading visits:', e);
+  } finally {
+    dataMapPage.loadingC = false;
+  }
+};
 </script>
 
 <style scoped>
@@ -149,5 +167,15 @@ function handleMarkerAction(action: 'add' | 'none') {
   position: relative;
   margin: 20px;
   z-index: 1;
+}
+.btn-reload {
+  background-color: #16bf16; 
+  color: white; 
+  border: none;
+  padding: 5px 20px;
+  margin: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
 }
 </style>
