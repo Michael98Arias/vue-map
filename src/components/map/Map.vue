@@ -10,7 +10,7 @@
     {{ dataMapPage.subtitle }}
     
   </h4>
-  <button @click="handleClose" class="btn-reload">Reload</button>
+  <button @click="ListVisits" class="btn-reload">Reload</button>
   <br>
   <div ref="mapContainer" class="map-container" style="height: 800px"></div>
   <LoadingSpinner v-if="dataMapPage.loadingC" />
@@ -125,7 +125,6 @@ function handleMarkerAction(action: 'add' | 'none') {
   dataMapPage.pointerEnabled = true;
 }
 const ListVisits = async () => {
-  console.log('dartos',dataMapPage.loadingC)
   try {
     dataMapPage.loadingC = true;
     const rawData: ListVisit[] = await MapApi.getVisits();
